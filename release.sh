@@ -18,10 +18,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/version.sh"
 
 DRY_RUN=0
-if [ "$1" = "--dry-run" ]; then
-    DRY_RUN=1
-    shift
-fi
+NO_PUSH=0
+while true; do
+    case "$1" in
+        --dry-run) DRY_RUN=1; shift ;;
+        # Publish the release and commit the appcast, but leave the push to you.
+        # Sparkle reads the feed from main, so an unpushed appcast means no
+        # installed copy sees the update yet -- a review window, not a release.
+        --no-push) NO_PUSH=1; shift ;;
+        *) break ;;
+    esac
+done
 
 NOTES="${1:-Maintenance release.}"
 TAG="v$VERSION"
@@ -172,7 +179,6 @@ fi
 
 git add "$APPCAST"
 git commit -q -m "Publish $APP_NAME $VERSION"
-git push origin main
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
@@ -180,6 +186,15 @@ echo "✅ Released $APP_NAME $VERSION"
 echo "   Release:  https://github.com/$REPO/releases/tag/$TAG"
 echo "   Appcast:  $FEED_URL"
 echo ""
-echo "   Installed copies pick this up within 24h, or immediately"
-echo "   via the menu bar → Check for Updates…"
+
+if [ $NO_PUSH -eq 1 ]; then
+    echo "⏸️  Appcast committed but NOT pushed (--no-push)."
+    echo "   The download URL above is already public, but the feed is not,"
+    echo "   so no installed copy will offer the update until you run:"
+    echo "     git push origin main"
+else
+    git push origin main
+    echo "   Installed copies pick this up within 24h, or immediately"
+    echo "   via the menu bar → Check for Updates…"
+fi
 echo "════════════════════════════════════════════════════════════"
