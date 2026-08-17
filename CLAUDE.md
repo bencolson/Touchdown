@@ -40,37 +40,28 @@ Never yet tested with real touch input, because of (1). Once granted:
 - Confirm taps land under the finger across the full 2560×720 width.
 - If they are offset or scaled, run `./run_analyzer.sh`, touch each corner, and update `touchscreenMaxX` / `touchscreenMaxY` in `TouchscreenDriver.swift`. Current values (`16383` / `9599`) are inherited from upstream and unverified on this unit.
 
-### 3. Finish the build machine
+Both remaining items are on the **client**, not the build machine. The release side is finished — see below.
 
-The Mac mini is the build machine. Sparkle's own half is **done**; two Apple credentials remain.
+## Release state — v1.5.0 is live
 
-Done, and not to be redone:
+Shipped 2026-08-17. The feed is live and Sparkle will offer this to any install that polls it.
 
-- **Sparkle signing key** exists in the login keychain under account `touchdown`, and `PUBLIC_ED_KEY` in `version.sh` matches it (`Nc9tz…KmaI=`). Adopting the mini's key was free because nothing had been published — see the window that closes, below.
-- **`sign_update` needs no dialog.** The documented first-run Keychain authorization prompt did not appear; a signature was produced and verified non-interactively:
-  `./vendor/sparkle/bin/sign_update --verify --account touchdown <zip> <sig>` → exit 0.
-- **The pipeline is proven end to end** against that key via `SIGN_IDENTITY=- ./release.sh --dry-run` — compile, bundle, inside-out signing, `ditto` archive, EdDSA signature, appcast render. Only the two Apple steps below are untested.
+- Release: `https://github.com/bencolson/Touchdown/releases/tag/v1.5.0`
+- Feed: `https://raw.githubusercontent.com/bencolson/Touchdown/main/appcast.xml`
 
-- **Developer ID Application certificate** issued for team `99L757HY7N` and present in the login keychain, alongside the unrelated `Apple Development: Ben Colson (J4F35UYW36)` identity. Confirm with `security find-identity -v -p codesigning`.
-- **Notarization profile** `touchdown-notary` stored in the keychain (Apple ID `ben@bencolson.com`, team `99L757HY7N`, app-specific password). Notarization has since run for real and was **Accepted**.
+Verified against the artifact **GitHub actually serves**, fetched fresh from the feed's own enclosure URL — not against the local build: byte length matches the enclosure (1107060), the live feed's `edSignature` verifies against the downloaded zip, `spctl` reports `accepted` / `source=Notarized Developer ID`, the stapled ticket survives the `ditto` round-trip, and the embedded `SUFeedURL` / `SUPublicEDKey` are correct.
 
-The build machine is therefore complete — `./setup-release-machine.sh` reports all green.
+The build machine is complete: `./setup-release-machine.sh` reports all green. Specifically —
 
-⚠️ **The keychain caveat from `~/CLAUDE.md` does not bite here, but only because of how the session is attached.** `codesign` and `sign_update` reach private keys because this runs in an `Aqua` session with the login keychain unlocked `no-timeout`. Over SSH, `launchctl managername` reads `Background`, the keychain returns *"User interaction is not allowed"*, and signing fails with `errSecInternalComponent`. Cut releases from a GUI session, or `security unlock-keychain ~/Library/Keychains/login.keychain-db` first.
+- **Sparkle key** in the login keychain under account `touchdown`, matching `PUBLIC_ED_KEY`. `sign_update` needed no Keychain dialog, contrary to the warning this file used to carry.
+- **Developer ID Application certificate** for team `99L757HY7N`, alongside the unrelated `Apple Development: Ben Colson (J4F35UYW36)` identity. Note the second is a different team *and* identity, and cannot sign a release.
+- **Notarization profile** `touchdown-notary` (Apple ID `ben@bencolson.com`, team `99L757HY7N`). Notarization ran for real and was **Accepted**.
 
-### 4. Push the appcast (v1.5.0 is released but not yet offered)
+⚠️ **The Sparkle key window is shut.** `Nc9tzL…` is embedded in a published build, so it can no longer be regenerated — only migrated by exporting the private half (`generate_keys -x`). It exists **only** in this mini's login keychain; if it is lost, updates cannot be shipped to installed copies at all, and there is no recovery path. Back it up.
 
-**v1.5.0 is published** at `https://github.com/bencolson/Touchdown/releases/tag/v1.5.0` — notarized, stapled, Gatekeeper-accepted. It was cut with `--no-push`, so the appcast entry is **committed locally and not pushed**. Sparkle reads the feed from `main`, so until someone runs `git push origin main` the download URL is public but no installed copy is offered the update.
+⚠️ **Cut releases from a GUI session.** `codesign` and `sign_update` reach private keys only because the release was cut in an `Aqua` session with the login keychain unlocked. Over SSH, `launchctl managername` reads `Background`, the keychain returns *"User interaction is not allowed"*, and signing fails with `errSecInternalComponent` — the same trap documented under Deckard in `~/CLAUDE.md`. Otherwise `security unlock-keychain ~/Library/Keychains/login.keychain-db` first.
 
-That is the entire remaining action:
-
-```bash
-git push origin main
-```
-
-Verified against the artifact actually served by GitHub, not just the local build: byte length matches the appcast enclosure, the appcast's `edSignature` verifies against the downloaded zip, `spctl` reports `source=Notarized Developer ID`, the stapled ticket survives the `ditto` round-trip, and the embedded `SUFeedURL` / `SUPublicEDKey` are correct.
-
-⚠️ **The Sparkle key window is now shut.** `Nc9tzL…` is embedded in a published build, so it can no longer be regenerated — only migrated by exporting the private half (`generate_keys -x`). There is no recovery path if it is lost.
+`release.sh` takes `--no-push` to publish the GitHub release and commit the appcast while leaving the push to you — the feed only goes live on push, so this is the review window. `--dry-run` publishes nothing but still notarizes when `NOTARY_PROFILE` is set.
 
 ## Established facts, so they are not re-derived
 
