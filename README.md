@@ -172,6 +172,37 @@ Two private keys matter, both in the login Keychain and neither in this repo:
 
 Export it for backup with `vendor/sparkle/bin/generate_keys -x`.
 
+### Setting up a build machine
+
+Releases are cut from one designated machine that holds the keys; every other Mac is just a client running the driver. On the build machine:
+
+```bash
+git clone https://github.com/bencolson/Touchdown.git
+cd Touchdown
+./setup-release-machine.sh
+```
+
+It audits the toolchain, the Developer ID cert, `gh` auth, the notarytool profile, and the Sparkle key, then does a test build and prints the resulting designated requirement.
+
+What actually has to move between machines is narrower than it looks:
+
+| | Migrate? | Why |
+|---|---|---|
+| Developer ID certificate | **No** | The designated requirement pins `subject.OU` — the *team* — not a specific certificate. Any Developer ID Application cert from the same team satisfies it, so issue a fresh one in Xcode and existing TCC grants still hold. |
+| Sparkle EdDSA key | **Yes, after the first release** | Its public half is embedded in every installed copy's `Info.plist`. Sparkle rejects signatures that don't match, and there is no recovery path. |
+| notarytool profile | No | Re-run `store-credentials`. |
+| `gh` auth | No | Re-run `gh auth login`. |
+
+Before the first release there is no installed base to honour, so the simplest move is to generate a fresh Sparkle key on the build machine, update `PUBLIC_ED_KEY` in `version.sh`, and reinstall once on each client. After the first release that option is gone — export and import the original instead:
+
+```bash
+# machine that has the key
+vendor/sparkle/bin/generate_keys -x sparkle-key.txt
+# build machine
+vendor/sparkle/bin/generate_keys -f sparkle-key.txt
+rm -P sparkle-key.txt
+```
+
 ### Why releases are cut locally, not in CI
 
 `.github/workflows/build.yml` verifies that the driver compiles, bundles, signs ad-hoc, and links Sparkle via `@rpath` — but it does not release. Publishing needs both private keys, and putting them in GitHub secrets would place the signing identity for every future update on a shared runner. Releases are cut from a machine that already holds the keys.
