@@ -116,6 +116,66 @@ launchctl unload ~/Library/LaunchAgents/com.bencolson.touchdown.plist
 launchctl load ~/Library/LaunchAgents/com.bencolson.touchdown.plist
 ```
 
+## Updating
+
+Touchdown updates itself through [Sparkle](https://sparkle-project.org) 2.9.6, fed by `appcast.xml` in this repo. Installed copies check once a day, or on demand from the menu bar → **Check for Updates…**
+
+### Why this needs a Developer ID
+
+TCC keys permissions differently depending on how the app is signed:
+
+| Signing | TCC keys on | Effect on updates |
+|---|---|---|
+| Ad-hoc | `cdhash` of the binary | **Every update voids Accessibility and Input Monitoring** |
+| Developer ID | bundle ID + team ID | Permissions survive every update |
+
+An ad-hoc signed auto-updater breaks itself: each update installs a binary with a new hash, TCC no longer recognises it, and the driver silently stops injecting clicks until you re-grant both permissions by hand. `build.sh` therefore signs with a Developer ID by default. Verify the designated requirement has no hash in it:
+
+```bash
+codesign -d --requirements - ~/Applications/Touchdown.app
+# designated => identifier "com.bencolson.touchdown" and anchor apple generic
+#   and certificate leaf[subject.OU] = "99L757HY7N"
+```
+
+### Notarization is required, not optional
+
+Sparkle downloads updates over the network, so macOS applies the quarantine attribute. Gatekeeper rejects an unnotarized Developer ID app, which means an unnotarized update installs and then refuses to launch. `release.sh` refuses to publish without a notarytool profile.
+
+Set one up once:
+
+```bash
+xcrun notarytool store-credentials touchdown-notary \
+  --apple-id <your-apple-id> \
+  --team-id 99L757HY7N \
+  --password <app-specific-password>   # appleid.apple.com → App-Specific Passwords
+```
+
+### Cutting a release
+
+```bash
+# 1. bump VERSION in version.sh
+# 2. rehearse: builds, archives, signs, renders the appcast item, publishes nothing
+./release.sh --dry-run "What changed."
+
+# 3. ship it
+NOTARY_PROFILE=touchdown-notary ./release.sh "What changed."
+```
+
+`release.sh` builds via `build.sh`, archives with `ditto` (plain `zip` mangles the signed bundle's symlinks and invalidates the signature), notarizes and staples, signs the archive with the Sparkle EdDSA key, publishes a GitHub release, prepends the item to `appcast.xml`, and pushes. It refuses to run against a dirty tree or a tag that already exists.
+
+### Keys
+
+Two private keys matter, both in the login Keychain and neither in this repo:
+
+- **Developer ID certificate** — code signing.
+- **Sparkle EdDSA key**, stored as *"Private key for signing Sparkle updates"*. Its public half is `SUPublicEDKey` in the app's `Info.plist`. **Back this up.** Lose it and no installed copy will ever accept another update, because signatures will stop matching the embedded public key — you would have to reinstall every client by hand.
+
+Export it for backup with `vendor/sparkle/bin/generate_keys -x`.
+
+### Why releases are cut locally, not in CI
+
+`.github/workflows/build.yml` verifies that the driver compiles, bundles, signs ad-hoc, and links Sparkle via `@rpath` — but it does not release. Publishing needs both private keys, and putting them in GitHub secrets would place the signing identity for every future update on a shared runner. Releases are cut from a machine that already holds the keys.
+
 ## Calibration
 
 The driver is pre-calibrated for the Xeneon Edge touchscreen:
@@ -155,9 +215,16 @@ Display:
 
 | File | Description |
 |------|-------------|
-| `TouchscreenDriver.swift` | Main driver with HID capture and CGEvent injection |
+| `TouchscreenDriver.swift` | Main driver: HID capture, CGEvent injection, menu bar, Sparkle |
 | `HIDAnalyzer.swift` | Diagnostic tool to inspect raw HID reports |
-| `run_driver.sh` | Build and run the driver |
+| `version.sh` | Single source of truth for version, bundle ID, feed URL, public key |
+| `build.sh` | Builds and signs `Touchdown.app` into a given directory |
+| `install.sh` | Builds, installs to `~/Applications`, registers the LaunchAgent |
+| `uninstall.sh` | Removes app, LaunchAgent, Sparkle caches, TCC records, legacy layouts |
+| `release.sh` | Cuts a release: archive, notarize, sign, publish, update appcast |
+| `fetch-sparkle.sh` | Downloads Sparkle and verifies its SHA-256 |
+| `appcast.xml` | The Sparkle update feed clients poll |
+| `run_driver.sh` | Build and run the driver in the foreground |
 | `run_analyzer.sh` | Build and run the analyzer |
 
 ## Troubleshooting

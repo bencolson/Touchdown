@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+    <channel>
+        <title>Touchdown</title>
+        <link>https://raw.githubusercontent.com/bencolson/Touchdown/main/appcast.xml</link>
+        <description>Update feed for Touchdown, the Corsair Xeneon Edge touch driver for macOS.</description>
+        <language>en</language>
+        <!-- releases -->
+    </channel>
+</rss>

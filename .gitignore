@@ -32,3 +32,9 @@ Thumbs.db
 # IDE
 *.idea/
 *.vscode/
+
+# Sparkle (fetched by fetch-sparkle.sh)
+vendor/
+
+# Release artifacts
+dist/

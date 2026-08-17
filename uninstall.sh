@@ -2,8 +2,9 @@
 
 # Touchdown uninstaller
 
-APP_NAME="Touchdown"
-BUNDLE_ID="com.bencolson.touchdown"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/version.sh"
+
 APP="$HOME/Applications/$APP_NAME.app"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_NAME="$BUNDLE_ID.plist"
@@ -31,12 +32,19 @@ if [ -d "$APP" ]; then
     echo "✅ App removed"
 fi
 
-# Legacy layout from upstream: bare binary in /usr/local/bin.
+# Sparkle's own state: update cache, and the per-bundle check-interval prefs.
+rm -rf "$HOME/Library/Caches/$BUNDLE_ID" 2>/dev/null || true
+rm -rf "$HOME/Library/Caches/org.sparkle-project.Sparkle/$BUNDLE_ID" 2>/dev/null || true
+defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+
+# Legacy layouts from earlier versions and from upstream.
 if [ -f "/usr/local/bin/TouchscreenDriver" ]; then
     echo "🗑️  Removing legacy binary from /usr/local/bin (needs sudo)..."
     sudo rm -f "/usr/local/bin/TouchscreenDriver"
 fi
 rm -f "$HOME/.local/bin/TouchscreenDriver"
+rm -rf "$HOME/Applications/TouchscreenDriver.app"
+rm -f "$LAUNCH_AGENTS_DIR/com.ymlaine.touchscreendriver.plist"
 
 rm -f /tmp/touchdown.log /tmp/touchscreendriver.log
 
@@ -46,3 +54,7 @@ tccutil reset ListenEvent "$BUNDLE_ID" >/dev/null 2>&1 || true
 
 echo ""
 echo "✅ Uninstallation complete."
+echo ""
+echo "Note: the Sparkle EdDSA private key remains in your Keychain as"
+echo "\"Private key for signing Sparkle updates\". Keep it -- losing it means"
+echo "existing installs can never verify another update."

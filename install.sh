@@ -2,7 +2,8 @@
 
 # Touchdown installer — Corsair Xeneon Edge touchscreen driver for macOS
 #
-# Installs as a proper .app bundle in ~/Applications, with no sudo.
+# Builds via build.sh, installs to ~/Applications, registers a LaunchAgent.
+# No sudo at any point.
 #
 # Why a bundle and not a bare binary in /usr/local/bin:
 # macOS TCC will not register a raw Mach-O executable for Accessibility.
@@ -13,19 +14,21 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_NAME="Touchdown"
-BUNDLE_ID="com.bencolson.touchdown"
+source "$SCRIPT_DIR/version.sh"
+
 APP="$HOME/Applications/$APP_NAME.app"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_NAME="$BUNDLE_ID.plist"
 EXEC_PATH="$APP/Contents/MacOS/$APP_NAME"
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║   Touchdown — Xeneon Edge touch driver for macOS           ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Stop anything already running, and unload before we overwrite the binary.
+# Stop the running copy before replacing the bundle on disk.
 if launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
     echo "⏹️  Unloading existing LaunchAgent..."
     launchctl unload "$LAUNCH_AGENTS_DIR/$PLIST_NAME" 2>/dev/null || true
@@ -36,53 +39,14 @@ if pgrep -f "$APP_NAME" > /dev/null 2>&1; then
     sleep 1
 fi
 
-echo "🔨 Compiling..."
-cd "$SCRIPT_DIR"
-swiftc TouchscreenDriver.swift -o "$APP_NAME" \
-    -framework IOKit \
-    -framework CoreFoundation \
-    -framework CoreGraphics \
-    -framework AppKit \
-    -O
-echo "✅ Compiled"
+# Build into a staging dir, then swap into place, so a failed compile leaves
+# the working install untouched.
+"$SCRIPT_DIR/build.sh" "$STAGE"
 
-echo "📦 Building app bundle..."
+echo "📦 Installing to $APP..."
+mkdir -p "$HOME/Applications"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
-mv "$APP_NAME" "$EXEC_PATH"
-chmod +x "$EXEC_PATH"
-
-cat > "$APP/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>$APP_NAME</string>
-    <key>CFBundleDisplayName</key>
-    <string>$APP_NAME</string>
-    <key>CFBundleIdentifier</key>
-    <string>$BUNDLE_ID</string>
-    <key>CFBundleExecutable</key>
-    <string>$APP_NAME</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleVersion</key>
-    <string>1.4.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.4.0</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>10.15</string>
-    <key>LSUIElement</key>
-    <true/>
-</dict>
-</plist>
-PLIST
-
-# Ad-hoc signature is enough for TCC to keep a stable record, as long as the
-# binary is not rebuilt. Rebuilding changes the cdhash and voids both grants.
-codesign -s - --force --deep "$APP" >/dev/null 2>&1
-echo "✅ Bundle built and signed: $APP"
+ditto "$STAGE/$APP_NAME.app" "$APP"
 
 echo "📦 Installing LaunchAgent..."
 mkdir -p "$LAUNCH_AGENTS_DIR"
@@ -119,14 +83,14 @@ launchctl load "$LAUNCH_AGENTS_DIR/$PLIST_NAME"
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
-echo "✅ Installed. Starts automatically at login."
+echo "✅ Installed $APP_NAME $VERSION. Starts automatically at login."
 echo ""
-echo "⚠️  Grant two permissions to $APP_NAME.app now:"
+echo "⚠️  Grant two permissions to $APP_NAME.app:"
 echo "   → Privacy & Security → Accessibility"
 echo "   → Privacy & Security → Input Monitoring"
 echo ""
-echo "   The driver waits for the grant and picks it up within 2s."
-echo "   No restart needed."
+echo "   Developer ID signed, so these survive future updates."
+echo "   You only do this once."
 echo ""
 echo "Commands:"
 echo "  Stop:    launchctl unload ~/Library/LaunchAgents/$PLIST_NAME"

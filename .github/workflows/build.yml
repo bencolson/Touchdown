@@ -1,0 +1,62 @@
+name: Build
+
+# Verifies the driver compiles and bundles on a clean machine.
+#
+# Deliberately does NOT build releases. Releasing requires the Developer ID
+# certificate and the Sparkle EdDSA private key, and exporting either into
+# GitHub secrets would put the signing identity for every future update on
+# a shared runner. Releases are cut locally with ./release.sh, where both keys
+# stay in the login Keychain.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          sw_vers
+
+      - name: Fetch Sparkle
+        run: ./fetch-sparkle.sh
+
+      - name: Build (ad-hoc signed)
+        env:
+          SIGN_IDENTITY: "-"
+        run: |
+          mkdir -p ci-out
+          ./build.sh ci-out
+
+      - name: Verify bundle
+        run: |
+          APP=ci-out/Touchdown.app
+          test -x "$APP/Contents/MacOS/Touchdown"
+          test -d "$APP/Contents/Frameworks/Sparkle.framework"
+          plutil -lint "$APP/Contents/Info.plist"
+          codesign --verify --deep --strict "$APP"
+          # The embedded framework must be reachable via @rpath, or the app
+          # builds fine and then dies at launch with a dyld error.
+          otool -L "$APP/Contents/MacOS/Touchdown" | grep -q '@rpath/Sparkle.framework'
+          echo "✅ bundle layout, signature and Sparkle linkage all verified"
+
+      - name: Build analyzer
+        run: |
+          swiftc HIDAnalyzer.swift -o ci-out/HIDAnalyzer \
+            -framework IOKit -framework CoreFoundation -O
+
+      - name: Validate appcast
+        run: python3 -c "import xml.dom.minidom;xml.dom.minidom.parse('appcast.xml');print('appcast.xml OK')"
+
+      - name: Shellcheck scripts
+        run: |
+          for f in build.sh install.sh uninstall.sh release.sh fetch-sparkle.sh version.sh; do
+            bash -n "$f" && echo "OK $f"
+          done

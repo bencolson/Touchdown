@@ -5,6 +5,7 @@ import IOKit
 import IOKit.hid
 import CoreGraphics
 import AppKit
+import Sparkle
 
 // ============================================
 // Configuration pour Corsair Xeneon Edge
@@ -389,6 +390,12 @@ final class StatusController: NSObject {
     private let stateItem = NSMenuItem(title: "…", action: nil, keyEquivalent: "")
     private let displayItem = NSMenuItem(title: "…", action: nil, keyEquivalent: "")
 
+    // Sparkle. startingUpdater: true lance la vérification planifiée selon
+    // SUEnableAutomaticChecks / SUScheduledCheckInterval de l'Info.plist.
+    private let updater = SPUStandardUpdaterController(startingUpdater: true,
+                                                      updaterDelegate: nil,
+                                                      userDriverDelegate: nil)
+
     // À appeler sur le thread principal avant NSApplication.run(), pour que
     // l'état « en attente de permission » soit déjà visible.
     func install() {
@@ -420,6 +427,20 @@ final class StatusController: NSObject {
                                  keyEquivalent: "")
         openLog.target = self
         menu.addItem(openLog)
+
+        menu.addItem(.separator())
+
+        let checkUpdates = NSMenuItem(title: "Check for Updates…",
+                                      action: #selector(checkForUpdates),
+                                      keyEquivalent: "")
+        checkUpdates.target = self
+        menu.addItem(checkUpdates)
+
+        let versionItem = NSMenuItem(
+            title: "Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")",
+            action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
 
         menu.addItem(.separator())
 
@@ -482,6 +503,13 @@ final class StatusController: NSObject {
 
     @objc private func openLogFile() {
         NSWorkspace.shared.open(URL(fileURLWithPath: logPath))
+    }
+
+    @objc private func checkForUpdates() {
+        // .accessory ne passe pas au premier plan tout seul: sans ça, la
+        // fenêtre de Sparkle s'ouvre derrière les autres applications.
+        NSApp.activate(ignoringOtherApps: true)
+        updater.checkForUpdates(nil)
     }
 
     @objc private func quitDriver() {
@@ -590,14 +618,32 @@ func attachDriver() {
 // Programme principal
 // ============================================
 
+// Sparkle relance l'app lui-même après une mise à jour, et launchd peut aussi
+// en démarrer une. Deux instances en mode exclusif se disputeraient le seize
+// HID, donc la plus récente s'efface.
+func ensureSingleInstance() {
+    guard let bundleID = Bundle.main.bundleIdentifier else { return }
+    let me = ProcessInfo.processInfo.processIdentifier
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        .filter { $0.processIdentifier != me }
+    guard !others.isEmpty else { return }
+
+    let pids = others.map { String($0.processIdentifier) }.joined(separator: ", ")
+    print("⚠️  Another instance is already running (pid \(pids)), exiting.")
+    // exit(0): sortie propre, donc KeepAlive { SuccessfulExit = false } ne relance pas.
+    exit(0)
+}
+
 func main() {
     print("""
     ╔════════════════════════════════════════════════════════════╗
-    ║   Touchdown - Corsair Xeneon Edge               v1.4.0     ║
+    ║   Touchdown - Corsair Xeneon Edge               v1.5.0     ║
     ║   Maps touches to absolute clicks                          ║
     ╚════════════════════════════════════════════════════════════╝
 
     """)
+
+    ensureSingleInstance()
 
     // L'icône avant tout le reste: c'est elle qui rend visible l'attente
     // de permission, sinon l'utilisateur n'a que le journal.
