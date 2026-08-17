@@ -57,7 +57,19 @@ The build machine is complete: `./setup-release-machine.sh` reports all green. S
 - **Developer ID Application certificate** for team `99L757HY7N`, alongside the unrelated `Apple Development: Ben Colson (J4F35UYW36)` identity. Note the second is a different team *and* identity, and cannot sign a release.
 - **Notarization profile** `touchdown-notary` (Apple ID `ben@bencolson.com`, team `99L757HY7N`). Notarization ran for real and was **Accepted**.
 
-⚠️ **The Sparkle key window is shut.** `Nc9tzL…` is embedded in a published build, so it can no longer be regenerated — only migrated by exporting the private half (`generate_keys -x`). It exists **only** in this mini's login keychain; if it is lost, updates cannot be shipped to installed copies at all, and there is no recovery path. Back it up.
+⚠️ **The Sparkle key window is shut.** `Nc9tzL…` is embedded in a published build, so it can no longer be regenerated — only migrated. If both copies below are lost, updates cannot be shipped to installed copies at all, and there is no recovery path.
+
+It is backed up in the sops store described in `~/CLAUDE.md`, under `touchdown` — `sparkle_private_key` and `sparkle_public_key`. Two copies exist and no others: the mini's login keychain (account `touchdown`) and that sops entry.
+
+Restore onto a new build machine — note `tr -d '\n'`, since `yq` adds a trailing newline that `generate_keys` will not accept:
+
+```bash
+sops -d ~/.secrets/secrets.enc.yaml | yq -r '.touchdown.sparkle_private_key' | tr -d '\n' > /tmp/k.txt
+vendor/sparkle/bin/generate_keys --account touchdown -f /tmp/k.txt
+rm -P /tmp/k.txt
+```
+
+The backup was verified by restoring it and re-signing the published v1.5.0 zip: it reproduced the exact `edSignature` in the live appcast. EdDSA here is deterministic, so an identical signature is proof of an identical key — a stronger check than comparing the public halves.
 
 ⚠️ **Cut releases from a GUI session.** `codesign` and `sign_update` reach private keys only because the release was cut in an `Aqua` session with the login keychain unlocked. Over SSH, `launchctl managername` reads `Background`, the keychain returns *"User interaction is not allowed"*, and signing fails with `errSecInternalComponent` — the same trap documented under Deckard in `~/CLAUDE.md`. Otherwise `security unlock-keychain ~/Library/Keychains/login.keychain-db` first.
 
