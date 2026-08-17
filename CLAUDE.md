@@ -51,22 +51,26 @@ Done, and not to be redone:
   `./vendor/sparkle/bin/sign_update --verify --account touchdown <zip> <sig>` → exit 0.
 - **The pipeline is proven end to end** against that key via `SIGN_IDENTITY=- ./release.sh --dry-run` — compile, bundle, inside-out signing, `ditto` archive, EdDSA signature, appcast render. Only the two Apple steps below are untested.
 
-Still needed, both requiring an Apple account action that cannot be scripted from here:
+- **Developer ID Application certificate** issued for team `99L757HY7N` and present in the login keychain, alongside the unrelated `Apple Development: Ben Colson (J4F35UYW36)` identity. Confirm with `security find-identity -v -p codesigning`.
+- **Notarization profile** `touchdown-notary` stored in the keychain (Apple ID `ben@bencolson.com`, team `99L757HY7N`, app-specific password). Notarization has since run for real and was **Accepted**.
 
-- **Developer ID Application certificate** for team `99L757HY7N`. The mini holds only `Apple Development: Ben Colson (J4F35UYW36)` — a different identity *and* a different team, so it cannot sign a release. Xcode has no account signed in (`IDEProvisioningTeams` is absent), so this is Xcode → Settings → Accounts → Manage Certificates → **+**. A *newly issued* cert is correct; see "Signing" below for why nothing needs exporting.
-- **Notarization profile** — `xcrun notarytool store-credentials touchdown-notary --team-id 99L757HY7N …` with an app-specific password. No App Store Connect issuer ID is stored on this host, so the API-key route is unavailable; the two stray `AuthKey_*.p8` files are unattributed and were not used.
+The build machine is therefore complete — `./setup-release-machine.sh` reports all green.
 
 ⚠️ **The keychain caveat from `~/CLAUDE.md` does not bite here, but only because of how the session is attached.** `codesign` and `sign_update` reach private keys because this runs in an `Aqua` session with the login keychain unlocked `no-timeout`. Over SSH, `launchctl managername` reads `Background`, the keychain returns *"User interaction is not allowed"*, and signing fails with `errSecInternalComponent`. Cut releases from a GUI session, or `security unlock-keychain ~/Library/Keychains/login.keychain-db` first.
 
-### 4. Cut the first release
+### 4. Push the appcast (v1.5.0 is released but not yet offered)
 
-Nothing is published yet: zero releases, zero `<item>` entries in `appcast.xml`. The pipeline is verified end to end via `./release.sh --dry-run`, but never against a live tag.
+**v1.5.0 is published** at `https://github.com/bencolson/Touchdown/releases/tag/v1.5.0` — notarized, stapled, Gatekeeper-accepted. It was cut with `--no-push`, so the appcast entry is **committed locally and not pushed**. Sparkle reads the feed from `main`, so until someone runs `git push origin main` the download URL is public but no installed copy is offered the update.
+
+That is the entire remaining action:
 
 ```bash
-NOTARY_PROFILE=touchdown-notary ./release.sh "First release."
+git push origin main
 ```
 
-**The window that closes here:** adopting a different Sparkle key is free only while nothing is published. Once a release exists, the key is embedded in installed copies and must be migrated rather than regenerated — there is no recovery path.
+Verified against the artifact actually served by GitHub, not just the local build: byte length matches the appcast enclosure, the appcast's `edSignature` verifies against the downloaded zip, `spctl` reports `source=Notarized Developer ID`, the stapled ticket survives the `ditto` round-trip, and the embedded `SUFeedURL` / `SUPublicEDKey` are correct.
+
+⚠️ **The Sparkle key window is now shut.** `Nc9tzL…` is embedded in a published build, so it can no longer be regenerated — only migrated by exporting the private half (`generate_keys -x`). There is no recovery path if it is lost.
 
 ## Established facts, so they are not re-derived
 
