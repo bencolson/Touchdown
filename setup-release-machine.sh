@@ -121,11 +121,16 @@ echo ""
 echo "── Build check ─────────────────────────────────────────────"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-if "$SCRIPT_DIR/build.sh" "$STAGE" >/dev/null 2>&1; then
+BUILD_LOG="$STAGE/build.log"
+if "$SCRIPT_DIR/build.sh" "$STAGE" >"$BUILD_LOG" 2>&1; then
     echo "✅ builds and signs cleanly"
     codesign -d --requirements - "$STAGE/$APP_NAME.app" 2>&1 | tail -1 | sed 's/^/   /'
 else
-    echo "❌ build failed — run ./build.sh /tmp/x to see why"
+    # Show the tail rather than swallowing it: the usual cause is a missing
+    # signing identity, which is indistinguishable from a compile error
+    # unless you can see the output.
+    echo "❌ build failed:"
+    tail -6 "$BUILD_LOG" | sed 's/^/   /'
     FAIL=1
 fi
 

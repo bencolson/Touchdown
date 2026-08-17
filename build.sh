@@ -30,6 +30,9 @@ if [ ! -d "$SPARKLE" ]; then
 fi
 
 echo "🔨 Compiling $APP_NAME $VERSION..."
+# swiftc writes straight into OUT_DIR, so it has to exist first or ld fails
+# with a bare errno=2 that looks nothing like a missing directory.
+mkdir -p "$OUT_DIR"
 cd "$SCRIPT_DIR"
 # @executable_path/../Frameworks so the embedded Sparkle is found at runtime.
 swiftc TouchscreenDriver.swift -o "$OUT_DIR/.$APP_NAME.bin" \
