@@ -92,7 +92,10 @@ echo ""
 echo "── Sparkle EdDSA signing key ───────────────────────────────"
 # generate_keys prints the existing public key when a key is already present,
 # and creates one when it is not. Either way we compare against version.sh.
-KEY_OUTPUT="$("$SCRIPT_DIR/vendor/sparkle/bin/generate_keys" 2>&1 || true)"
+KEY_ARGS=()
+[ -n "$SPARKLE_KEY_ACCOUNT" ] && KEY_ARGS+=(--account "$SPARKLE_KEY_ACCOUNT")
+[ -n "$SPARKLE_KEY_ACCOUNT" ] && echo "   (keychain account: $SPARKLE_KEY_ACCOUNT)"
+KEY_OUTPUT="$("$SCRIPT_DIR/vendor/sparkle/bin/generate_keys" "${KEY_ARGS[@]}" 2>&1 || true)"
 LOCAL_KEY="$(echo "$KEY_OUTPUT" | grep -o '<string>[^<]*</string>' | sed 's/<[^>]*>//g' | head -1)"
 
 if [ -z "$LOCAL_KEY" ]; then

@@ -97,7 +97,9 @@ fi
 # does not verify against SUPublicEDKey, which is what makes the feed safe to
 # serve over a URL you do not fully control.
 echo "🔑 Signing update..."
-SIG_LINE="$("$SIGN_UPDATE" "$ZIP")"
+SIGN_ARGS=()
+[ -n "$SPARKLE_KEY_ACCOUNT" ] && SIGN_ARGS+=(--account "$SPARKLE_KEY_ACCOUNT")
+SIG_LINE="$("$SIGN_UPDATE" "${SIGN_ARGS[@]}" "$ZIP")"
 echo "   $SIG_LINE"
 
 ED_SIG="$(echo "$SIG_LINE" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')"
