@@ -1,6 +1,7 @@
 # Binaires compilés
 HIDAnalyzer
 TouchscreenDriver
+Touchdown
 
 # Build Swift
 .build/
