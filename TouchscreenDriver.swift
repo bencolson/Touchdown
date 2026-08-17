@@ -103,7 +103,7 @@ func injectClick(at point: CGPoint) {
                                    mouseType: .leftMouseDown,
                                    mouseCursorPosition: point,
                                    mouseButton: .left) else {
-        print("❌ Erreur création événement mouseDown")
+        print("❌ Failed to create mouseDown event")
         return
     }
 
@@ -111,7 +111,7 @@ func injectClick(at point: CGPoint) {
                                  mouseType: .leftMouseUp,
                                  mouseCursorPosition: point,
                                  mouseButton: .left) else {
-        print("❌ Erreur création événement mouseUp")
+        print("❌ Failed to create mouseUp event")
         return
     }
 
@@ -129,7 +129,7 @@ func injectClick(at point: CGPoint) {
         CGDisplayShowCursor(CGMainDisplayID())
     }
 
-    print("🖱️  Clic injecté à (\(Int(point.x)), \(Int(point.y)))")
+    print("🖱️  Click injected at (\(Int(point.x)), \(Int(point.y)))")
 }
 
 func injectDrag(to point: CGPoint) {
@@ -206,7 +206,7 @@ func setupScreen() {
     // Par défaut on prend l'écran principal, mais tu peux ajuster
     
     let screens = NSScreen.screens
-    print("📺 Écrans détectés:")
+    print("📺 Displays detected:")
     
     for (index, screen) in screens.enumerated() {
         let frame = screen.frame
@@ -218,14 +218,14 @@ func setupScreen() {
     // Tu peux ajuster cette logique selon ta configuration
     if let xeneonScreen = screens.first(where: { $0.localizedName.contains("XENEON") || $0.localizedName.contains("Corsair") }) {
         targetScreen = xeneonScreen
-        print("✅ Écran Xeneon Edge trouvé!")
+        print("✅ Xeneon Edge display found")
     } else if screens.count > 1 {
         // Prendre le deuxième écran (souvent l'externe)
         targetScreen = screens[1]
-        print("⚠️  Xeneon non identifié par nom, utilisation de l'écran secondaire")
+        print("⚠️  Xeneon not identified by name, falling back to the secondary display")
     } else {
         targetScreen = NSScreen.main
-        print("⚠️  Un seul écran détecté, utilisation de l'écran principal")
+        print("⚠️  Only one display detected, using the main display")
     }
     
     updateScreenGeometry()
@@ -281,8 +281,8 @@ func updateScreenGeometry() {
         screenWidth = frame.width
         screenHeight = frame.height
 
-        print("📐 Écran cible: \(Int(screenWidth))x\(Int(screenHeight)) points")
-        print("   Backing scale factor: \(scaleFactor)x (HiDPI: \(scaleFactor > 1 ? "oui" : "non"))")
+        print("📐 Target display: \(Int(screenWidth))x\(Int(screenHeight)) points")
+        print("   Backing scale factor: \(scaleFactor)x (HiDPI: \(scaleFactor > 1 ? "yes" : "no"))")
         print("   NSScreen origin: (\(Int(frame.origin.x)), \(Int(frame.origin.y)))")
         print("   CGEvent origin:  (\(Int(screenOffsetX)), \(Int(screenOffsetY)))")
     }
@@ -308,7 +308,7 @@ class ScreenChangeObserver {
             object: nil,
             queue: .main
         ) { _ in
-            print("\n🔄 Configuration d'écran modifiée! Mise à jour...")
+            print("\n🔄 Display configuration changed, updating...")
             setupScreen()
             saveCurrentGeometry()
         }
@@ -346,9 +346,9 @@ func checkForGeometryChanges() {
        frame.width != lastKnownScreenWidth ||
        frame.height != lastKnownScreenHeight {
 
-        print("\n🔄 Changement de disposition détecté!")
-        print("   Avant: (\(Int(lastKnownScreenOriginX)), \(Int(lastKnownScreenOriginY))) \(Int(lastKnownScreenWidth))x\(Int(lastKnownScreenHeight))")
-        print("   Après: (\(Int(frame.origin.x)), \(Int(frame.origin.y))) \(Int(frame.width))x\(Int(frame.height))")
+        print("\n🔄 Display layout change detected")
+        print("   Before: (\(Int(lastKnownScreenOriginX)), \(Int(lastKnownScreenOriginY))) \(Int(lastKnownScreenWidth))x\(Int(lastKnownScreenHeight))")
+        print("   After: (\(Int(frame.origin.x)), \(Int(frame.origin.y))) \(Int(frame.width))x\(Int(frame.height))")
 
         // Mettre à jour la référence à l'écran
         targetScreen = currentXeneon
@@ -409,13 +409,13 @@ final class StatusController: NSObject {
         }
         menu.addItem(.separator())
 
-        let redetect = NSMenuItem(title: "Redétecter l'écran",
+        let redetect = NSMenuItem(title: "Redetect Display",
                                   action: #selector(redetectScreen),
                                   keyEquivalent: "")
         redetect.target = self
         menu.addItem(redetect)
 
-        let openLog = NSMenuItem(title: "Ouvrir le journal",
+        let openLog = NSMenuItem(title: "Open Log",
                                  action: #selector(openLogFile),
                                  keyEquivalent: "")
         openLog.target = self
@@ -423,7 +423,7 @@ final class StatusController: NSObject {
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quitter Touchdown",
+        let quit = NSMenuItem(title: "Quit Touchdown",
                               action: #selector(quitDriver),
                               keyEquivalent: "q")
         quit.target = self
@@ -445,19 +445,19 @@ final class StatusController: NSObject {
 
         switch state {
         case .waitingPermission:
-            stateItem.title = "En attente de la permission Accessibilité"
+            stateItem.title = "Waiting for Accessibility permission"
             button.appearsDisabled = true
             button.contentTintColor = nil
         case .waitingDevice:
-            stateItem.title = "En attente du Xeneon Edge…"
+            stateItem.title = "Waiting for Xeneon Edge…"
             button.appearsDisabled = true
             button.contentTintColor = nil
         case .active:
-            stateItem.title = "Actif"
+            stateItem.title = "Active"
             button.appearsDisabled = false
             button.contentTintColor = nil
         case .failed(let reason):
-            stateItem.title = "Erreur: \(reason)"
+            stateItem.title = "Error: \(reason)"
             button.appearsDisabled = false
             button.contentTintColor = .systemRed
         }
@@ -467,9 +467,9 @@ final class StatusController: NSObject {
 
     func refreshDisplayLine() {
         if let screen = targetScreen {
-            displayItem.title = "Écran: \(screen.localizedName) — \(Int(screenWidth))×\(Int(screenHeight))"
+            displayItem.title = "Display: \(screen.localizedName) — \(Int(screenWidth))×\(Int(screenHeight))"
         } else {
-            displayItem.title = "Écran: non détecté"
+            displayItem.title = "Display: not detected"
         }
     }
 
@@ -508,13 +508,13 @@ func attachDriver() {
 
     print("""
 
-    📊 Configuration actuelle:
+    📊 Current configuration:
        Touchscreen: X=[0, \(Int(touchscreenMaxX))], Y=[0, \(Int(touchscreenMaxY))]
-       Mode clic: \(clickMode == .moveCursorAndClick ? "Déplacer curseur + clic" : "Clic sans déplacer")
-       Mode capture: \(captureMode == .exclusive ? "EXCLUSIF (bloque événements système)" : "PARTAGÉ (peut causer des doubles clics)")
+       Click mode: \(clickMode == .moveCursorAndClick ? "Move cursor + click" : "Click in place")
+       Capture mode: \(captureMode == .exclusive ? "EXCLUSIVE (blocks system events)" : "SHARED (may cause double clicks)")
 
-    ⚠️  Si les clics ne sont pas à la bonne position, ajuste les valeurs
-       touchscreenMaxX/Y dans le code source après avoir utilisé HIDAnalyzer.
+    ⚠️  If clicks land in the wrong place, adjust touchscreenMaxX/Y in the
+       source after running HIDAnalyzer.
 
     """)
 
@@ -534,44 +534,44 @@ func attachDriver() {
     let openOptions: IOOptionBits
     if captureMode == .exclusive {
         openOptions = IOOptionBits(kIOHIDOptionsTypeSeizeDevice)
-        print("🔒 Ouverture en mode EXCLUSIF (seize device)...")
+        print("🔒 Opening in EXCLUSIVE mode (seize device)...")
     } else {
         openOptions = IOOptionBits(kIOHIDOptionsTypeNone)
-        print("🔓 Ouverture en mode PARTAGÉ...")
+        print("🔓 Opening in SHARED mode...")
     }
 
     let openResult = IOHIDManagerOpen(manager, openOptions)
     if openResult != kIOReturnSuccess {
-        print("❌ Erreur: Impossible d'ouvrir IOHIDManager (code: \(openResult))")
+        print("❌ Error: could not open IOHIDManager (code: \(openResult))")
         if captureMode == .exclusive {
             print("""
 
-            💡 Le mode exclusif peut échouer si:
-               - Un autre programme utilise déjà le périphérique
-               - Les permissions sont insuffisantes
+            💡 Exclusive mode can fail if:
+               - Another program already holds the device
+               - Permissions are insufficient
 
-            Tu peux essayer le mode PARTAGÉ en changeant:
+            You can try SHARED mode by changing:
                var captureMode: CaptureMode = .shared
 
             """)
         }
         // Rester en vie et signaler dans la barre de menus. Un exit() ici
         // déclencherait la boucle de relance de launchd.
-        StatusController.shared.setState(.failed("ouverture HID refusée"))
+        StatusController.shared.setState(.failed("HID open refused"))
         return
     }
 
     // Vérifier le périphérique. Absent = probablement débranché, donc on
     // réessaie au lieu de sortir: le Xeneon peut arriver après le driver.
     guard let deviceSet = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>, !deviceSet.isEmpty else {
-        print("⏳ Écran tactile non trouvé, nouvelle tentative dans 3s...")
+        print("⏳ Touchscreen not found, retrying in 3s...")
         StatusController.shared.setState(.waitingDevice)
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { attachDriver() }
         return
     }
 
-    print("✅ Écran tactile connecté!")
+    print("✅ Touchscreen connected")
 
     // Enregistrer le callback
     IOHIDManagerRegisterInputValueCallback(manager, hidInputCallback, nil)
@@ -581,7 +581,7 @@ func attachDriver() {
 
     print("""
 
-    🎯 Driver actif! Touche l'écran pour cliquer.
+    🎯 Driver active. Touch the screen to click.
 
     """)
 }
@@ -594,7 +594,7 @@ func main() {
     print("""
     ╔════════════════════════════════════════════════════════════╗
     ║   Touchdown - Corsair Xeneon Edge               v1.4.0     ║
-    ║   Convertit les touches en clics absolus                   ║
+    ║   Maps touches to absolute clicks                          ║
     ╚════════════════════════════════════════════════════════════╝
 
     """)
@@ -604,19 +604,19 @@ func main() {
     StatusController.shared.install()
 
     // Le dialogue de permission doit être demandé depuis le thread principal.
-    print("🔐 Vérification des permissions Accessibilité...")
+    print("🔐 Checking Accessibility permission...")
     if checkAccessibilityPermission() {
-        print("✅ Permission Accessibilité accordée")
+        print("✅ Accessibility permission granted")
         DispatchQueue.main.async { attachDriver() }
     } else {
         print("""
 
-        ⚠️  PERMISSION REQUISE
+        ⚠️  PERMISSION REQUIRED
 
-        Pour injecter des clics, cette app doit être ajoutée à:
-        Réglages Système → Confidentialité et sécurité → Accessibilité
+        To inject clicks, this app must be added to:
+        System Settings → Privacy & Security → Accessibility
 
-        En attente de la permission (pas besoin de relancer)...
+        Waiting for the grant (no need to relaunch)...
 
         """)
         StatusController.shared.setState(.waitingPermission)
@@ -629,7 +629,7 @@ func main() {
             while !AXIsProcessTrusted() {
                 Thread.sleep(forTimeInterval: 2.0)
             }
-            print("✅ Permission Accessibilité accordée")
+            print("✅ Accessibility permission granted")
             DispatchQueue.main.async { attachDriver() }
         }
     }
