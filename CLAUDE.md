@@ -42,11 +42,21 @@ Never yet tested with real touch input, because of (1). Once granted:
 
 ### 3. Finish the build machine
 
-- **Developer ID Application certificate** — Xcode → Settings → Accounts → Manage Certificates → **+**. A *newly issued* cert is correct; see "Signing" below for why nothing needs exporting.
-- **Sparkle signing key** — `./vendor/sparkle/bin/generate_keys --account touchdown`. Must be run from a GUI session: it refuses over SSH because the data-protection keychain needs GUI context.
-- **Update `PUBLIC_ED_KEY`** in `version.sh` to whatever that prints, and commit. Then reinstall on every client so the new public key is embedded.
-- **Notarization** — `xcrun notarytool store-credentials touchdown-notary --team-id 99L757HY7N …` with an app-specific password.
-- The **first** `sign_update` against a new key blocks on a Keychain authorization dialog. Cut the first release from a GUI session and answer **Always Allow**.
+The Mac mini is the build machine. Sparkle's own half is **done**; two Apple credentials remain.
+
+Done, and not to be redone:
+
+- **Sparkle signing key** exists in the login keychain under account `touchdown`, and `PUBLIC_ED_KEY` in `version.sh` matches it (`Nc9tz…KmaI=`). Adopting the mini's key was free because nothing had been published — see the window that closes, below.
+- **`sign_update` needs no dialog.** The documented first-run Keychain authorization prompt did not appear; a signature was produced and verified non-interactively:
+  `./vendor/sparkle/bin/sign_update --verify --account touchdown <zip> <sig>` → exit 0.
+- **The pipeline is proven end to end** against that key via `SIGN_IDENTITY=- ./release.sh --dry-run` — compile, bundle, inside-out signing, `ditto` archive, EdDSA signature, appcast render. Only the two Apple steps below are untested.
+
+Still needed, both requiring an Apple account action that cannot be scripted from here:
+
+- **Developer ID Application certificate** for team `99L757HY7N`. The mini holds only `Apple Development: Ben Colson (J4F35UYW36)` — a different identity *and* a different team, so it cannot sign a release. Xcode has no account signed in (`IDEProvisioningTeams` is absent), so this is Xcode → Settings → Accounts → Manage Certificates → **+**. A *newly issued* cert is correct; see "Signing" below for why nothing needs exporting.
+- **Notarization profile** — `xcrun notarytool store-credentials touchdown-notary --team-id 99L757HY7N …` with an app-specific password. No App Store Connect issuer ID is stored on this host, so the API-key route is unavailable; the two stray `AuthKey_*.p8` files are unattributed and were not used.
+
+⚠️ **The keychain caveat from `~/CLAUDE.md` does not bite here, but only because of how the session is attached.** `codesign` and `sign_update` reach private keys because this runs in an `Aqua` session with the login keychain unlocked `no-timeout`. Over SSH, `launchctl managername` reads `Background`, the keychain returns *"User interaction is not allowed"*, and signing fails with `errSecInternalComponent`. Cut releases from a GUI session, or `security unlock-keychain ~/Library/Keychains/login.keychain-db` first.
 
 ### 4. Cut the first release
 

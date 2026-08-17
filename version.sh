@@ -26,4 +26,4 @@ SPARKLE_KEY_ACCOUNT="touchdown"
 # EdDSA public key for the account above. Its private half stays in the
 # Keychain and is never committed. Create it with:
 #   vendor/sparkle/bin/generate_keys --account touchdown
-PUBLIC_ED_KEY="dKdY7grjiZOlO2HNAen7eo11h77rHSnpT1Z1EhEjbrM="
+PUBLIC_ED_KEY="Nc9tzLbpRRNpULi6oXdq9bhFSSe4C3aE9Cg3yBpKmaI="
