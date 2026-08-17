@@ -1,10 +1,34 @@
-# Touchscreen Driver for Corsair Xeneon Edge
-
-> **Co-authored by [Yves-Marie Lainé](https://github.com/ymlaine) and [Claude](https://claude.ai) (Anthropic AI)**
->
-> This driver was developed through human-AI collaboration using Claude Code.
+# Touchdown
 
 A macOS driver that converts touch input from the Corsair Xeneon Edge (14.5" touch bar, 2560x720) into mouse clicks at the correct absolute screen position.
+
+Without it, macOS ignores the panel's HID digitizer interface (usage page `0x0D`, usage `0x04`) entirely and falls back to its Generic Desktop Mouse interface, which it reads as *relative* deltas. A tap becomes "click wherever the cursor already is" instead of "click here."
+
+> Fork of [ymlaine/TouchscreenDriver](https://github.com/ymlaine/TouchscreenDriver), originally co-authored by [Yves-Marie Lainé](https://github.com/ymlaine) and Claude.
+
+## What this fork changes
+
+**Installs as a signed `.app` bundle, not a bare binary.** macOS TCC will not register a raw Mach-O executable for Accessibility — it never appears in the Privacy & Security list, so the permission can't be granted and clicks can never be injected. `tccutil reset Accessibility` on the installed binary confirms it: *"No such bundle identifier."* There was no record to toggle. Only a code-signed bundle with a `CFBundleIdentifier` gets a TCC record.
+
+**No more permission-dialog storm.** Upstream calls `AXIsProcessTrustedWithOptions` with `prompt: true` and then `exit(1)` when the grant is missing. Combined with the LaunchAgent's `KeepAlive { SuccessfulExit = false }`, launchd relaunches on every failure and each launch throws a fresh dialog — an unbounded loop of stacked prompts. This fork prompts once, then polls `AXIsProcessTrusted()` silently every 2s and proceeds the moment you grant it. No relaunch, no second dialog, no restart needed.
+
+**No sudo.** Installs to `~/Applications` and `~/Library/LaunchAgents` instead of `/usr/local/bin`, which is root-owned. Nothing root-owned to clean up.
+
+**A menu bar icon** (`hand.rays`), so the driver's state is visible instead of log-only. Upstream runs completely invisibly — if it's stuck waiting on a permission or can't find the panel, there's no way to tell without `tail`ing a file in `/tmp`. The icon dims while waiting, goes solid when active, and turns red on failure. Its menu shows the target display and offers redetect / open log / quit.
+
+**Survives failure instead of exiting.** Upstream calls `exit(1)` when the HID open is refused or the panel isn't found — which, under `KeepAlive`, is the same relaunch-loop trap as the permission bug. This fork reports the failure in the menu bar and stays up; a missing panel retries every 3s, so unplugging and replugging the Xeneon just works.
+
+**`LSUIElement`** plus `.accessory` activation policy so it stays out of the Dock and ⌘-Tab, and `uninstall.sh` clears the TCC records so a later reinstall prompts cleanly.
+
+Note: the ad-hoc signature is hash-based, so **recompiling voids both permission grants** and you'll re-approve.
+
+## Menu bar
+
+| Icon | Meaning |
+|---|---|
+| Dimmed | Waiting on Accessibility permission, or waiting for the panel to appear |
+| Solid | Active — taps are being mapped to clicks |
+| Red | HID open refused (usually Input Monitoring missing, or another app holds the device) |
 
 ## Features
 
@@ -37,16 +61,16 @@ A macOS driver that converts touch input from the Corsair Xeneon Edge (14.5" tou
 ### Automatic (Recommended)
 
 ```bash
-git clone https://github.com/ymlaine/TouchscreenDriver.git
-cd TouchscreenDriver
+git clone https://github.com/bencolson/Touchdown.git
+cd Touchdown
 ./install.sh
 ```
 
 This will:
 - Compile the driver
-- Install it to `/usr/local/bin`
-- Configure it to start automatically at login
-- Start the driver immediately
+- Package and ad-hoc sign `~/Applications/Touchdown.app`
+- Install a LaunchAgent so it starts at login
+- Start it immediately (no sudo at any point)
 
 ### Uninstall
 
@@ -57,38 +81,39 @@ This will:
 ### Manual
 
 ```bash
-git clone https://github.com/ymlaine/TouchscreenDriver.git
-cd TouchscreenDriver
+git clone https://github.com/bencolson/Touchdown.git
+cd Touchdown
 chmod +x run_driver.sh run_analyzer.sh
 ./run_driver.sh
 ```
 
 ### Grant Permissions
 
-On first run, macOS will ask for permissions:
+Grant both to **`Touchdown.app`** — not to Terminal, and not to a bare binary:
 
-1. **Accessibility**: Required to inject mouse clicks
+1. **Accessibility** — to inject mouse clicks
    - System Settings → Privacy & Security → Accessibility
-   - Add Terminal (or the compiled binary)
-
-2. **Input Monitoring**: Required to capture HID events
+2. **Input Monitoring** — to capture HID events (exclusive seize)
    - System Settings → Privacy & Security → Input Monitoring
-   - Add Terminal (or the compiled binary)
+
+The driver waits for the grant and continues within 2 seconds. You do not need to restart it.
+
+If the app doesn't appear in the list, drag `~/Applications/Touchdown.app` in directly.
 
 ### Control Commands
 
 ```bash
 # Status
-pgrep -f TouchscreenDriver && echo "Running" || echo "Stopped"
+pgrep -f Touchdown && echo "Running" || echo "Stopped"
 
 # Logs
-tail -f /tmp/touchscreendriver.log
+tail -f /tmp/touchdown.log
 
 # Stop
-launchctl unload ~/Library/LaunchAgents/com.ymlaine.touchscreendriver.plist
+launchctl unload ~/Library/LaunchAgents/com.bencolson.touchdown.plist
 
 # Start
-launchctl load ~/Library/LaunchAgents/com.ymlaine.touchscreendriver.plist
+launchctl load ~/Library/LaunchAgents/com.bencolson.touchdown.plist
 ```
 
 ## Calibration

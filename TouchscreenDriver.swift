@@ -369,36 +369,135 @@ func checkAccessibilityPermission() -> Bool {
 }
 
 // ============================================
+// Icône de la barre de menus
+// ============================================
+
+let logPath = "/tmp/touchdown.log"
+
+// NSObject: les NSMenuItem ont besoin d'une cible Objective-C pour leurs actions.
+final class StatusController: NSObject {
+    static let shared = StatusController()
+
+    enum State {
+        case waitingPermission
+        case waitingDevice
+        case active
+        case failed(String)
+    }
+
+    private var statusItem: NSStatusItem?
+    private let stateItem = NSMenuItem(title: "…", action: nil, keyEquivalent: "")
+    private let displayItem = NSMenuItem(title: "…", action: nil, keyEquivalent: "")
+
+    // À appeler sur le thread principal avant NSApplication.run(), pour que
+    // l'état « en attente de permission » soit déjà visible.
+    func install() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
+        if #available(macOS 11.0, *) {
+            let icon = NSImage(systemSymbolName: "hand.rays", accessibilityDescription: "Touchdown")
+            icon?.isTemplate = true  // suit le thème clair/sombre de la barre
+            item.button?.image = icon
+        } else {
+            item.button?.title = "✋"
+        }
+
+        let menu = NSMenu()
+        for line in [stateItem, displayItem] {
+            line.isEnabled = false
+            menu.addItem(line)
+        }
+        menu.addItem(.separator())
+
+        let redetect = NSMenuItem(title: "Redétecter l'écran",
+                                  action: #selector(redetectScreen),
+                                  keyEquivalent: "")
+        redetect.target = self
+        menu.addItem(redetect)
+
+        let openLog = NSMenuItem(title: "Ouvrir le journal",
+                                 action: #selector(openLogFile),
+                                 keyEquivalent: "")
+        openLog.target = self
+        menu.addItem(openLog)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: "Quitter Touchdown",
+                              action: #selector(quitDriver),
+                              keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+
+        item.menu = menu
+        statusItem = item
+        setState(.waitingPermission)
+    }
+
+    func setState(_ state: State) {
+        // Toute mutation d'AppKit doit se faire sur le thread principal.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.setState(state) }
+            return
+        }
+
+        guard let button = statusItem?.button else { return }
+
+        switch state {
+        case .waitingPermission:
+            stateItem.title = "En attente de la permission Accessibilité"
+            button.appearsDisabled = true
+            button.contentTintColor = nil
+        case .waitingDevice:
+            stateItem.title = "En attente du Xeneon Edge…"
+            button.appearsDisabled = true
+            button.contentTintColor = nil
+        case .active:
+            stateItem.title = "Actif"
+            button.appearsDisabled = false
+            button.contentTintColor = nil
+        case .failed(let reason):
+            stateItem.title = "Erreur: \(reason)"
+            button.appearsDisabled = false
+            button.contentTintColor = .systemRed
+        }
+
+        refreshDisplayLine()
+    }
+
+    func refreshDisplayLine() {
+        if let screen = targetScreen {
+            displayItem.title = "Écran: \(screen.localizedName) — \(Int(screenWidth))×\(Int(screenHeight))"
+        } else {
+            displayItem.title = "Écran: non détecté"
+        }
+    }
+
+    @objc private func redetectScreen() {
+        setupScreen()
+        findXeneonDisplayID()
+        saveCurrentGeometry()
+        refreshDisplayLine()
+    }
+
+    @objc private func openLogFile() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: logPath))
+    }
+
+    @objc private func quitDriver() {
+        // exit(0): avec KeepAlive { SuccessfulExit = false }, launchd ne
+        // relance pas après une sortie propre.
+        exit(0)
+    }
+}
+
+// ============================================
 // Programme principal
 // ============================================
 
-func main() {
-    print("""
-    ╔════════════════════════════════════════════════════════════╗
-    ║   Touchscreen Driver - Corsair Xeneon Edge      v1.3.0     ║
-    ║   Convertit les touches en clics absolus                   ║
-    ╚════════════════════════════════════════════════════════════╝
-
-    """)
-    
-    // Vérifier les permissions Accessibilité
-    print("🔐 Vérification des permissions Accessibilité...")
-    if !checkAccessibilityPermission() {
-        print("""
-        
-        ⚠️  PERMISSION REQUISE
-        
-        Pour injecter des clics, cette app doit être ajoutée à:
-        Préférences Système → Confidentialité → Accessibilité
-        
-        Une fenêtre de demande devrait s'être ouverte.
-        Après avoir accordé la permission, relance le programme.
-        
-        """)
-        exit(1)
-    }
-    print("✅ Permission Accessibilité accordée")
-    
+// Attache le HID et démarre la capture. Doit tourner sur le thread principal:
+// le callback est planifié sur CFRunLoopGetMain(), servi par NSApplication.run().
+func attachDriver() {
     // Configurer l'écran cible
     setupScreen()
     findXeneonDisplayID()
@@ -406,30 +505,30 @@ func main() {
 
     // Initialiser l'observer pour les changements d'écran
     screenObserver = ScreenChangeObserver()
-    
+
     print("""
-    
+
     📊 Configuration actuelle:
        Touchscreen: X=[0, \(Int(touchscreenMaxX))], Y=[0, \(Int(touchscreenMaxY))]
        Mode clic: \(clickMode == .moveCursorAndClick ? "Déplacer curseur + clic" : "Clic sans déplacer")
        Mode capture: \(captureMode == .exclusive ? "EXCLUSIF (bloque événements système)" : "PARTAGÉ (peut causer des doubles clics)")
-    
+
     ⚠️  Si les clics ne sont pas à la bonne position, ajuste les valeurs
        touchscreenMaxX/Y dans le code source après avoir utilisé HIDAnalyzer.
-    
+
     """)
-    
+
     // Créer le HID Manager
     let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-    
+
     // Filtrer pour notre écran tactile
     let deviceMatch: [String: Any] = [
         kIOHIDVendorIDKey as String: TOUCHSCREEN_VENDOR_ID,
         kIOHIDProductIDKey as String: TOUCHSCREEN_PRODUCT_ID
     ]
-    
+
     IOHIDManagerSetDeviceMatching(manager, deviceMatch as CFDictionary)
-    
+
     // Ouvrir le manager avec le mode approprié
     // kIOHIDOptionsTypeSeizeDevice = 0x01 - prend le contrôle exclusif du périphérique
     let openOptions: IOOptionBits
@@ -440,46 +539,106 @@ func main() {
         openOptions = IOOptionBits(kIOHIDOptionsTypeNone)
         print("🔓 Ouverture en mode PARTAGÉ...")
     }
-    
+
     let openResult = IOHIDManagerOpen(manager, openOptions)
     if openResult != kIOReturnSuccess {
         print("❌ Erreur: Impossible d'ouvrir IOHIDManager (code: \(openResult))")
         if captureMode == .exclusive {
             print("""
-            
+
             💡 Le mode exclusif peut échouer si:
                - Un autre programme utilise déjà le périphérique
                - Les permissions sont insuffisantes
-               
+
             Tu peux essayer le mode PARTAGÉ en changeant:
                var captureMode: CaptureMode = .shared
-               
+
             """)
         }
-        exit(1)
+        // Rester en vie et signaler dans la barre de menus. Un exit() ici
+        // déclencherait la boucle de relance de launchd.
+        StatusController.shared.setState(.failed("ouverture HID refusée"))
+        return
     }
-    
-    // Vérifier le périphérique
+
+    // Vérifier le périphérique. Absent = probablement débranché, donc on
+    // réessaie au lieu de sortir: le Xeneon peut arriver après le driver.
     guard let deviceSet = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>, !deviceSet.isEmpty else {
-        print("❌ Erreur: Écran tactile non trouvé!")
-        exit(1)
+        print("⏳ Écran tactile non trouvé, nouvelle tentative dans 3s...")
+        StatusController.shared.setState(.waitingDevice)
+        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { attachDriver() }
+        return
     }
-    
+
     print("✅ Écran tactile connecté!")
-    
+
     // Enregistrer le callback
     IOHIDManagerRegisterInputValueCallback(manager, hidInputCallback, nil)
     IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
-    
+
+    StatusController.shared.setState(.active)
+
     print("""
-    
+
     🎯 Driver actif! Touche l'écran pour cliquer.
-       (Ctrl+C pour quitter)
-    
+
     """)
-    
-    // Lancer le RunLoop
-    CFRunLoopRun()
+}
+
+// ============================================
+// Programme principal
+// ============================================
+
+func main() {
+    print("""
+    ╔════════════════════════════════════════════════════════════╗
+    ║   Touchdown - Corsair Xeneon Edge               v1.4.0     ║
+    ║   Convertit les touches en clics absolus                   ║
+    ╚════════════════════════════════════════════════════════════╝
+
+    """)
+
+    // L'icône avant tout le reste: c'est elle qui rend visible l'attente
+    // de permission, sinon l'utilisateur n'a que le journal.
+    StatusController.shared.install()
+
+    // Le dialogue de permission doit être demandé depuis le thread principal.
+    print("🔐 Vérification des permissions Accessibilité...")
+    if checkAccessibilityPermission() {
+        print("✅ Permission Accessibilité accordée")
+        DispatchQueue.main.async { attachDriver() }
+    } else {
+        print("""
+
+        ⚠️  PERMISSION REQUISE
+
+        Pour injecter des clics, cette app doit être ajoutée à:
+        Réglages Système → Confidentialité et sécurité → Accessibilité
+
+        En attente de la permission (pas besoin de relancer)...
+
+        """)
+        StatusController.shared.setState(.waitingPermission)
+
+        // Polling silencieux, hors du thread principal pour ne pas figer la
+        // barre de menus. Un seul dialogue a été montré, pas de re-demande.
+        // Et pas d'exit(): sinon KeepAlive relance en boucle et empile les
+        // dialogues système.
+        DispatchQueue.global(qos: .utility).async {
+            while !AXIsProcessTrusted() {
+                Thread.sleep(forTimeInterval: 2.0)
+            }
+            print("✅ Permission Accessibilité accordée")
+            DispatchQueue.main.async { attachDriver() }
+        }
+    }
+
+    // NSApplication fournit la boucle d'événements (mode par défaut), donc les
+    // sources CFRunLoop du HID sont servies. .accessory = pas d'icône du Dock.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.run()
 }
 
 // Désactiver le buffering pour voir la sortie en temps réel
