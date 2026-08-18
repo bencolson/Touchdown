@@ -2,8 +2,15 @@
 
 # Touchdown uninstaller
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/version.sh"
+# Works standalone over curl as well as from a clone: an install done with
+# install-release.sh has no repo to source version.sh from.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/version.sh" ]; then
+    source "$SCRIPT_DIR/version.sh"
+else
+    APP_NAME="Touchdown"
+    BUNDLE_ID="com.bencolson.touchdown"
+fi
 
 APP="$HOME/Applications/$APP_NAME.app"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"

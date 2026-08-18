@@ -20,7 +20,7 @@ Without it, macOS ignores the panel's HID digitizer interface (usage page `0x0D`
 
 **`LSUIElement`** plus `.accessory` activation policy so it stays out of the Dock and ⌘-Tab, and `uninstall.sh` clears the TCC records so a later reinstall prompts cleanly.
 
-Note: the ad-hoc signature is hash-based, so **recompiling voids both permission grants** and you'll re-approve.
+Released builds are Developer ID signed and notarized, so the designated requirement pins the bundle ID and team rather than a hash — **permission grants survive updates**. Only ad-hoc local builds (`SIGN_IDENTITY=-`) are hash-pinned and void the grants on every rebuild.
 
 ## Menu bar
 
@@ -52,13 +52,35 @@ Note: the ad-hoc signature is hash-based, so **recompiling voids both permission
 
 ## Requirements
 
-- macOS 10.15+ (Catalina or later)
-- Xcode Command Line Tools: `xcode-select --install`
+- macOS 11+ (Big Sur or later)
 - Corsair Xeneon Edge connected via USB-C
+- Xcode Command Line Tools (`xcode-select --install`) — **only** to build from source; installing the release needs nothing
 
 ## Installation
 
-### Automatic (Recommended)
+### From the release (recommended)
+
+No Xcode, no clone, no signing identity:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bencolson/Touchdown/main/install-release.sh | bash
+```
+
+This reads the same appcast Sparkle reads, downloads the published build, and
+**refuses to install it unless it passes three checks**: an intact signature,
+team `99L757HY7N`, and Gatekeeper acceptance (i.e. genuinely notarized). It then
+installs to `~/Applications`, registers the LaunchAgent, and starts it. No sudo.
+
+`--dry-run` verifies the current release and installs nothing.
+
+Note that `codesign --verify` alone is not sufficient — an ad-hoc signature is
+internally valid too. The team and Gatekeeper checks are what make a substituted
+build fail.
+
+### From source
+
+Needs a Developer ID Application certificate for the team, so in practice this
+is the build machine only:
 
 ```bash
 git clone https://github.com/bencolson/Touchdown.git
@@ -66,16 +88,31 @@ cd Touchdown
 ./install.sh
 ```
 
-This will:
-- Compile the driver
-- Package and ad-hoc sign `~/Applications/Touchdown.app`
-- Install a LaunchAgent so it starts at login
-- Start it immediately (no sudo at any point)
+Compiles, signs, installs to `~/Applications`, registers the LaunchAgent, and
+starts it. Without that certificate it fails at `codesign` with *"no identity
+found"* — use the release installer above instead.
+
+To hack on the driver without the Developer ID, override the identity:
+
+```bash
+SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./install.sh
+```
+
+Prefer that over ad-hoc (`SIGN_IDENTITY=-`). Ad-hoc pins the designated
+requirement to a `cdhash`, so **every rebuild voids both permission grants** and
+this driver does nothing at all until both are re-granted. An Apple Development
+identity produces a hash-free requirement, so the grants survive rebuilds.
 
 ### Uninstall
 
 ```bash
 ./uninstall.sh
+```
+
+Or, if you installed from the release and have no clone:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bencolson/Touchdown/main/uninstall.sh | bash
 ```
 
 ### Manual

@@ -42,6 +42,22 @@ Never yet tested with real touch input, because of (1). Once granted:
 
 Both remaining items are on the **client**, not the build machine. The release side is finished — see below.
 
+## Installing, and the three ways to sign
+
+`install-release.sh` is the client path: it reads the appcast, downloads the published build, and installs it with no Xcode, no clone and no signing identity. It is deliberately self-contained so it works over `curl | bash`, which is why it duplicates the LaunchAgent plist and a few constants from `install.sh` — **keep the two in step**. `uninstall.sh` has the same standalone fallback for the same reason.
+
+It refuses to install unless the build passes three checks: intact signature, team `99L757HY7N`, and Gatekeeper acceptance. All three are needed — `codesign --verify` **passes on an ad-hoc build**, so on its own it would not catch a substituted one. Verified by running an ad-hoc build against all three: signature passed, team and Gatekeeper both rejected.
+
+`install.sh` builds from source and needs the Developer ID cert, so it is effectively build-machine-only. For development elsewhere, override the identity — and prefer an Apple Development cert over ad-hoc:
+
+| `SIGN_IDENTITY` | Designated requirement | Grants survive rebuild? |
+|---|---|---|
+| unset (Developer ID) | `identifier` + `subject.OU` | yes — and survives updates |
+| `Apple Development: …` | `identifier` + `subject.CN` | yes |
+| `-` (ad-hoc) | `cdhash H"…"` | **no** — new hash every compile |
+
+Both non-ad-hoc requirements were confirmed hash-free by building with each. Since the driver does nothing at all without Accessibility *and* Input Monitoring, ad-hoc costs two re-grants per rebuild. Note a dev-signed build holds TCC grants separately from a release build, so switching between them costs one re-grant.
+
 ## Release state — v1.5.0 is live
 
 Shipped 2026-08-17. The feed is live and Sparkle will offer this to any install that polls it.
