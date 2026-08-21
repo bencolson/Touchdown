@@ -38,6 +38,14 @@ var isTouching: Bool = false
 var lastClickTime: Date = Date.distantPast
 let debounceInterval: TimeInterval = 0.05 // 50ms debounce
 
+// Journalisation des points de contact. Coupée par défaut: elle écrit une
+// ligne par toucher dans /tmp, sans rotation ni purge, ce qui finit par
+// constituer une trace détaillée de l'usage de l'écran. Réactivable sans
+// recompiler — un rebuild ad-hoc révoquant les autorisations TCC:
+//   defaults write com.bencolson.touchdown LogTouchPoints -bool true
+// puis relancer le driver.
+let logTouchPoints = UserDefaults.standard.bool(forKey: "LogTouchPoints")
+
 // ============================================
 // Mode de fonctionnement
 // ============================================
@@ -130,7 +138,9 @@ func injectClick(at point: CGPoint) {
         CGDisplayShowCursor(CGMainDisplayID())
     }
 
-    print("🖱️  Click injected at (\(Int(point.x)), \(Int(point.y)))")
+    if logTouchPoints {
+        print("🖱️  Click injected at (\(Int(point.x)), \(Int(point.y)))")
+    }
 }
 
 func injectDrag(to point: CGPoint) {
@@ -235,14 +245,23 @@ func setupScreen() {
 var xeneonDisplayID: CGDirectDisplayID = 0
 
 func findXeneonDisplayID() {
-    // Trouver l'ID du display Xeneon au démarrage
+    // setupScreen() a déjà retenu le bon écran, par nom quand c'est possible.
+    // On en dérive directement le CGDirectDisplayID: « le premier écran qui
+    // n'est pas le principal » se trompe dès qu'il y en a trois, et écrase
+    // ensuite la bonne géométrie à chaque événement HID.
+    if let screen = targetScreen,
+       let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+        xeneonDisplayID = id
+        return
+    }
+
+    // Repli: le premier écran qui n'est pas le principal.
     var displayCount: UInt32 = 0
     CGGetActiveDisplayList(0, nil, &displayCount)
 
     var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
     CGGetActiveDisplayList(displayCount, &displays, &displayCount)
 
-    // Prendre le display qui n'est pas le principal
     for display in displays {
         if display != CGMainDisplayID() {
             xeneonDisplayID = display
@@ -311,6 +330,7 @@ class ScreenChangeObserver {
         ) { _ in
             print("\n🔄 Display configuration changed, updating...")
             setupScreen()
+            findXeneonDisplayID()
             saveCurrentGeometry()
         }
 
@@ -353,6 +373,7 @@ func checkForGeometryChanges() {
 
         // Mettre à jour la référence à l'écran
         targetScreen = currentXeneon
+        findXeneonDisplayID()
         updateScreenGeometry()
         saveCurrentGeometry()
     }
@@ -523,6 +544,13 @@ final class StatusController: NSObject {
 // Programme principal
 // ============================================
 
+// Référence forte sur le manager HID. attachDriver() rend la main avant que
+// NSApplication.run() ne serve la runloop: sans ce global, ARC libère le
+// manager au retour, la source runloop disparaît avec lui et plus aucun
+// événement n'arrive — alors que l'ouverture et la saisie ont réussi, donc
+// le driver s'annonce « actif » sans rien capter.
+var hidManager: IOHIDManager?
+
 // Attache le HID et démarre la capture. Doit tourner sur le thread principal:
 // le callback est planifié sur CFRunLoopGetMain(), servi par NSApplication.run().
 func attachDriver() {
@@ -548,6 +576,7 @@ func attachDriver() {
 
     // Créer le HID Manager
     let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    hidManager = manager
 
     // Filtrer pour notre écran tactile
     let deviceMatch: [String: Any] = [
